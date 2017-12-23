@@ -44,7 +44,7 @@ DD855987B3CCBD4EA4314B289C11E65289E4D9B1AAF0DABD20A81FF989F700835DB0F49691E4C0AE
 5D2DC1E2D86538FB7BAEFAC5FC190183D88BE
 '''
 
-LIBG_ADDRESS = 0xf0cf3000
+LIBG_ADDRESS = 0xefae4000
 
 libg = open('libg.so', 'rb').read()
 sp_img = open('sp.bin', 'rb').read()
@@ -81,7 +81,6 @@ def initialize_registers(mu):
     mu.reg_write(UC_ARM_REG_R11, 0x19e)
     mu.reg_write(UC_ARM_REG_R12, r12_addr)
     mu.reg_write(UC_ARM_REG_SP, sp_addr)
-    mu.reg_write(UC_ARM_REG_LR, LIBG_ADDRESS + 0x3B4F26)
 
 
 def jump(uc, address, size):
@@ -130,11 +129,32 @@ def hook_code(uc, address, size, user_data):
     if ad == 0x485E84 or ad == 0x3b4f32:
         uc.reg_write(UC_ARM_REG_R0, 0x00)
 
+    # another jfree here. everything is nopped, just set the things up ->
     if ad == 0x3b4f3a:
-        uc.reg_write(UC_ARM_REG_R0, 0x400000 + 0x500 - 0x9C)
+        uc.reg_write(UC_ARM_REG_R4, 0x500000 + 0x200)
 
-    if ad == 0x3b4f42:
-        uc.reg_write(UC_ARM_REG_PC, LIBG_ADDRESS + 0x4E5E8)
+    # r6 + 0x14 still point to the hold image when entering 0x3b4f64 :S
+    if ad == 0x3b4f62:
+        uc.mem_write(uc.reg_read(UC_ARM_REG_R6) + 0x14, struct.pack("<I", 0x400000 + 0x500 - 0x9C))
+
+    if ad == 0x3b4f6a:
+        print(hex(struct.unpack("<I", uc.mem_read(uc.reg_read(UC_ARM_REG_R5) + 0x98, 4))[0]))
+
+
+def print_regs(uc):
+    print(hex(uc.reg_read(UC_ARM_REG_R0)))
+    print(hex(uc.reg_read(UC_ARM_REG_R1)))
+    print(hex(uc.reg_read(UC_ARM_REG_R2)))
+    print(hex(uc.reg_read(UC_ARM_REG_R3)))
+    print(hex(uc.reg_read(UC_ARM_REG_R4)))
+    print(hex(uc.reg_read(UC_ARM_REG_R5)))
+    print(hex(uc.reg_read(UC_ARM_REG_R6)))
+    print(hex(uc.reg_read(UC_ARM_REG_R7)))
+    print(hex(uc.reg_read(UC_ARM_REG_R8)))
+    print(hex(uc.reg_read(UC_ARM_REG_R9)))
+    print(hex(uc.reg_read(UC_ARM_REG_R10)))
+    print(hex(uc.reg_read(UC_ARM_REG_R11)))
+    print(hex(uc.reg_read(UC_ARM_REG_R12)))
 
 
 def hook_mem_access(uc, access, address, size, value, user_data):
@@ -151,39 +171,14 @@ def hook_mem_invalid(uc, access, address, size, value, user_data):
     if access == UC_MEM_WRITE_UNMAPPED:
         print(
             ">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
-        print(hex(uc.reg_read(UC_ARM_REG_R0)))
-        print(hex(uc.reg_read(UC_ARM_REG_R1)))
-        print(hex(uc.reg_read(UC_ARM_REG_R2)))
-        print(hex(uc.reg_read(UC_ARM_REG_R3)))
-        print(hex(uc.reg_read(UC_ARM_REG_R4)))
-        print(hex(uc.reg_read(UC_ARM_REG_R5)))
-        print(hex(uc.reg_read(UC_ARM_REG_R6)))
-        print(hex(uc.reg_read(UC_ARM_REG_R7)))
-        print(hex(uc.reg_read(UC_ARM_REG_R8)))
-        print(hex(uc.reg_read(UC_ARM_REG_R9)))
-        print(hex(uc.reg_read(UC_ARM_REG_R10)))
-        print(hex(uc.reg_read(UC_ARM_REG_R11)))
-        print(hex(uc.reg_read(UC_ARM_REG_R12)))
+        print_regs(uc)
         return True
     else:
         print(
             ">>> Missing memory is being READ at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
         if uc.reg_read(UC_ARM_REG_R0) == 0xd38cac1f:
             uc.reg_write(UC_ARM_REG_R0, uc.reg_read(UC_ARM_REG_SP) - 0x500)
-
-        print(hex(uc.reg_read(UC_ARM_REG_R0)))
-        print(hex(uc.reg_read(UC_ARM_REG_R1)))
-        print(hex(uc.reg_read(UC_ARM_REG_R2)))
-        print(hex(uc.reg_read(UC_ARM_REG_R3)))
-        print(hex(uc.reg_read(UC_ARM_REG_R4)))
-        print(hex(uc.reg_read(UC_ARM_REG_R5)))
-        print(hex(uc.reg_read(UC_ARM_REG_R6)))
-        print(hex(uc.reg_read(UC_ARM_REG_R7)))
-        print(hex(uc.reg_read(UC_ARM_REG_R8)))
-        print(hex(uc.reg_read(UC_ARM_REG_R9)))
-        print(hex(uc.reg_read(UC_ARM_REG_R10)))
-        print(hex(uc.reg_read(UC_ARM_REG_R11)))
-        print(hex(uc.reg_read(UC_ARM_REG_R12)))
+        print_regs(uc)
         return True
 
 
@@ -201,8 +196,6 @@ def hook_err(uc, address, data):
 
 
 def malloc_replace(uc):
-    l = uc.reg_read(UC_ARM_REG_R0)
-    uc.mem_map(0x500000, l)
     uc.reg_write(UC_ARM_REG_R0, 0x500000)
 
 
@@ -270,6 +263,9 @@ def start():
         mu.mem_write(LIBG_ADDRESS + 0x3E8C3A, bytes.fromhex('00bf00bf'))
         # nop memcpy's after encr
         mu.mem_write(LIBG_ADDRESS + 0x3B4F2E, bytes.fromhex('00bf00bf00bf00bf00bf'))
+        # load msg id without reading ptr recursive
+        mu.mem_write(LIBG_ADDRESS + 0x3b4f3a, bytes.fromhex('00bf00bf42F2757000bf00bf'))
+
 
         # map stack pointer
         mu.mem_map(0x100000, 1024 * 512)
@@ -281,9 +277,13 @@ def start():
         mu.mem_write(0x300000, extra_high_img_t)
         mu.mem_map(0x400000, 1024 * 512)
         mu.mem_write(0x400000, extra_low_image)
+        # map extra space
+        mu.mem_map(0x500000, 1024 * 512)
 
         # setup context
         initialize_registers(mu)
+        mu.reg_write(UC_ARM_REG_LR, LIBG_ADDRESS + 0x3B4F27)
+
         sp_addr = 0x100000 + 0x24000
         r4_addr = 0x400000 + 0x500
         mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 4, struct.pack("<I", r4_addr + 0x60))
@@ -305,22 +305,10 @@ def start():
         mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, hook_mem_fetch_unmapped)
         mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, hook_mem_invalid)
         # mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x040EC0)
-        mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x3b4f44)
+        mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x040EC0)
 
         print("encryption emulation done")
-        print(hex(mu.reg_read(UC_ARM_REG_R0)))
-        print(hex(mu.reg_read(UC_ARM_REG_R1)))
-        print(hex(mu.reg_read(UC_ARM_REG_R2)))
-        print(hex(mu.reg_read(UC_ARM_REG_R3)))
-        print(hex(mu.reg_read(UC_ARM_REG_R4)))
-        print(hex(mu.reg_read(UC_ARM_REG_R5)))
-        print(hex(mu.reg_read(UC_ARM_REG_R6)))
-        print(hex(mu.reg_read(UC_ARM_REG_R7)))
-        print(hex(mu.reg_read(UC_ARM_REG_R8)))
-        print(hex(mu.reg_read(UC_ARM_REG_R9)))
-        print(hex(mu.reg_read(UC_ARM_REG_R10)))
-        print(hex(mu.reg_read(UC_ARM_REG_R11)))
-        print(hex(mu.reg_read(UC_ARM_REG_R12)))
+        print_regs(mu)
         mu.emu_stop()
     except UcError as e:
         print("ERROR: %s" % e)
