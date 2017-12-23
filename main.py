@@ -53,6 +53,7 @@ extra_high_img_t = open('extra_high_2.bin', 'rb').read()
 extra_low_image = open('extra_low_1.bin', 'rb').read()
 
 md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
+arm_md = Cs(CS_ARCH_ARM, CS_ARCH_ARM)
 
 enc_memcpy = [0x3EC7F6, 0x3ec8f8, 0x3EC9FA, 0x3ECAFC, 0x3ecc4c, 0x3eabe2, 0x3ec298, 0x3EC39A,
               0x3EC49C, 0x3EC59E, 0x3e0c0a, 0x2F5C1E, 0x3E0C4C, 0x3E0D3E, 0x3E0D5A, 0x3E8D22,
@@ -91,6 +92,13 @@ def jump(uc, address, size):
 
 def hook_block(uc, address, size, user_data):
     print(">>> Tracing basic block at 0x%x, block size = 0x%x" % (address, size))
+
+
+def hook_arm(uc, address, size, user_data):
+    ad = address - 0x350000
+    print(">>> Tracing instruction at 0x%x, instruction size = 0x%x" % (ad, size))
+    for i in arm_md.disasm(bytes(uc.mem_read(address, size)), address):
+        print("0x%x:\t%s\t%s" % (i.address - 0x350000, i.mnemonic, i.op_str))
 
 
 def hook_code(uc, address, size, user_data):
@@ -137,24 +145,60 @@ def hook_code(uc, address, size, user_data):
     if ad == 0x3b4f62:
         uc.mem_write(uc.reg_read(UC_ARM_REG_R6) + 0x14, struct.pack("<I", 0x400000 + 0x500 - 0x9C))
 
+    # patches for message version simplify
     if ad == 0x3b4f6a:
         print(hex(struct.unpack("<I", uc.mem_read(uc.reg_read(UC_ARM_REG_R5) + 0x98, 4))[0]))
+    if ad == 0x26a9d4:
+        uc.reg_write(UC_ARM_REG_R0, 0x09)
+
+    # send
+    if ad == 0x0D3266:
+        print("hit send")
+        print_send(uc)
+
+    if ad == 0x3b4f94:
+        uc.reg_write(UC_ARM_REG_R0, LIBG_ADDRESS + 0x331E2E)
+
+    # we can jump straight and skip double recv
+    if ad == 0xFB6DA:
+        uc.reg_write(UC_ARM_REG_R0, 0x400000 + 0x500 - 0x5c)
+        uc.reg_write(UC_ARM_REG_R1, 0x400000 + 0x500 - 0x9c)
+        uc.reg_write(UC_ARM_REG_PC, LIBG_ADDRESS + 0x3A90F9)
+
+    # write enc payload len
+    if ad == 0x3a9150:
+        uc.reg_write(UC_ARM_REG_R0, 0x19e)
+    # these are safely 0
+    if ad == 0x3a915c:
+        uc.reg_write(UC_ARM_REG_R0, 0x00)
+    if ad == 0x3A9194:
+        uc.reg_write(UC_ARM_REG_R5, 0x00)
+    # load msg id
+    if ad == 0x3A918E:
+        uc.reg_write(UC_ARM_REG_R0, 0x2775)
 
 
 def print_regs(uc):
-    print(hex(uc.reg_read(UC_ARM_REG_R0)))
-    print(hex(uc.reg_read(UC_ARM_REG_R1)))
-    print(hex(uc.reg_read(UC_ARM_REG_R2)))
-    print(hex(uc.reg_read(UC_ARM_REG_R3)))
-    print(hex(uc.reg_read(UC_ARM_REG_R4)))
-    print(hex(uc.reg_read(UC_ARM_REG_R5)))
-    print(hex(uc.reg_read(UC_ARM_REG_R6)))
-    print(hex(uc.reg_read(UC_ARM_REG_R7)))
-    print(hex(uc.reg_read(UC_ARM_REG_R8)))
-    print(hex(uc.reg_read(UC_ARM_REG_R9)))
-    print(hex(uc.reg_read(UC_ARM_REG_R10)))
-    print(hex(uc.reg_read(UC_ARM_REG_R11)))
-    print(hex(uc.reg_read(UC_ARM_REG_R12)))
+    print("r0 " + hex(uc.reg_read(UC_ARM_REG_R0)))
+    print("r1 " + hex(uc.reg_read(UC_ARM_REG_R1)))
+    print("r2 " + hex(uc.reg_read(UC_ARM_REG_R2)))
+    print("r3 " + hex(uc.reg_read(UC_ARM_REG_R3)))
+    print("r4 " + hex(uc.reg_read(UC_ARM_REG_R4)))
+    print("r5 " + hex(uc.reg_read(UC_ARM_REG_R5)))
+    print("r6 " + hex(uc.reg_read(UC_ARM_REG_R6)))
+    print("r7 " + hex(uc.reg_read(UC_ARM_REG_R7)))
+    print("r8 " + hex(uc.reg_read(UC_ARM_REG_R8)))
+    print("r9 " + hex(uc.reg_read(UC_ARM_REG_R9)))
+    print("r10 " + hex(uc.reg_read(UC_ARM_REG_R10)))
+    print("r11 " + hex(uc.reg_read(UC_ARM_REG_R11)))
+    print("r12 " + hex(uc.reg_read(UC_ARM_REG_R12)))
+    print("sp " + hex(uc.reg_read(UC_ARM_REG_SP)))
+    print("pc " + hex(uc.reg_read(UC_ARM_REG_PC)))
+    print("lr " + hex(uc.reg_read(UC_ARM_REG_LR)))
+
+
+def print_send(uc):
+    hexdump(uc.mem_read(uc.reg_read(UC_ARM_REG_R1), uc.reg_read(UC_ARM_REG_R2)))
 
 
 def hook_mem_access(uc, access, address, size, value, user_data):
@@ -209,7 +253,6 @@ def start():
         mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
         mu.mem_map(LIBG_ADDRESS, 1024 * 1024 * 512)
         mu.mem_write(LIBG_ADDRESS, libg)
-
         # PATCHES
         mu.mem_write(LIBG_ADDRESS + 0x3e162e, bytes.fromhex('00bf'))
         # nop jfree
@@ -220,6 +263,18 @@ def start():
         mu.mem_write(LIBG_ADDRESS + 0x2F5C36, bytes.fromhex('00bf'))
         mu.mem_write(LIBG_ADDRESS + 0x3DFBFA, bytes.fromhex('00bf'))
         mu.mem_write(LIBG_ADDRESS + 0x3DFBFE, bytes.fromhex('00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x386388, bytes.fromhex('00bf00bf00bf00bf00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x3863f0, bytes.fromhex('00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x386412, bytes.fromhex('00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x0d3254, bytes.fromhex('00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x0D326A, bytes.fromhex('00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x0D326E, bytes.fromhex('00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x38643C, bytes.fromhex('00bf00bf00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x3B4FA8, bytes.fromhex('00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x1c0160, bytes.fromhex('00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x3a910c, bytes.fromhex('00bf00bf00bf00bf00bf00bf00bf00bf00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x3A9138, bytes.fromhex('00bf00bf00bf00bf00bf00bf00bf'))
+
         # nop malloc
         mu.mem_write(LIBG_ADDRESS + 0x485E0A, bytes.fromhex('00bf00bf'))
         # nop memcpy payload
@@ -264,8 +319,28 @@ def start():
         # nop memcpy's after encr
         mu.mem_write(LIBG_ADDRESS + 0x3B4F2E, bytes.fromhex('00bf00bf00bf00bf00bf'))
         # load msg id without reading ptr recursive
-        mu.mem_write(LIBG_ADDRESS + 0x3b4f3a, bytes.fromhex('00bf00bf42F2757000bf00bf'))
-
+        mu.mem_write(LIBG_ADDRESS + 0x3b4f3a, bytes.fromhex('00bf00bf42f2757000bf00bf'))
+        # nop message version
+        mu.mem_write(LIBG_ADDRESS + 0x26a9d4, bytes.fromhex('00bf'))
+        # hardcode this
+        mu.mem_write(LIBG_ADDRESS + 0x1c176c, bytes.fromhex('006B'))
+        # patch send
+        mu.mem_write(LIBG_ADDRESS + 0x0D3266, bytes.fromhex('00bf00bf'))
+        # patch mem clear loop functions
+        mu.mem_write(LIBG_ADDRESS + 0x3b4f8a, bytes.fromhex('00bf00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x19ec34, bytes.fromhex('00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x3b4f9a, bytes.fromhex('00bf00bf'))
+        mu.mem_write(LIBG_ADDRESS + 0x1c014c, bytes.fromhex('00bf00bf00bf00bf00bf00bf00bf00bf'))
+        # sigil found :P
+        # mu.mem_write(LIBG_ADDRESS + 0x4a346c, bytes.fromhex('00bf00bf'))
+        # patch last things before final send
+        mu.mem_write(LIBG_ADDRESS + 0x3A9146, bytes.fromhex('00bf00bf00bf00bf'))
+        # patch payload len calc
+        mu.mem_write(LIBG_ADDRESS + 0x3a9150, bytes.fromhex('00bf00bf'))
+        # patch msg id
+        mu.mem_write(LIBG_ADDRESS + 0x3A918E, bytes.fromhex('00bf00bf'))
+        # patch the check for post login
+        mu.mem_write(LIBG_ADDRESS + 0x3A9194, bytes.fromhex('00bf00bf00bf00bf00bf'))
 
         # map stack pointer
         mu.mem_map(0x100000, 1024 * 512)
@@ -289,7 +364,8 @@ def start():
         mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 4, struct.pack("<I", r4_addr + 0x60))
         mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 8, struct.pack("<I", sp_addr + 0x10))
         mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 12, struct.pack("<I", r4_addr + 0x40))
-        mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 16, struct.pack("<I", r4_addr + 0x20))
+        mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 16, struct.pack("<I", 0x00))
+        mu.mem_write(mu.reg_read(UC_ARM_REG_R6) + 20, struct.pack("<I", r4_addr + 0x20))
         mu.mem_write(mu.reg_read(UC_ARM_REG_SP), struct.pack("<I", sp_addr + 0x1110))
         mu.mem_write(mu.reg_read(UC_ARM_REG_SP) + 4, struct.pack("<I", r4_addr))
         mu.mem_write(mu.reg_read(UC_ARM_REG_SP) + 8, struct.pack("<I", r4_addr + 0x40))
@@ -297,19 +373,41 @@ def start():
         print('patched stackpointer is ready to rock :P')
         hexdump(mu.mem_read(mu.reg_read(UC_ARM_REG_SP), 400))
 
-        # mu.hook_add(UC_ERR_HOOK, hook_err)
-        # mu.hook_add(UC_HOOK_BLOCK, hook_block)
         mu.hook_add(UC_HOOK_CODE, hook_code)
-        # mu.hook_add(UC_HOOK_MEM_WRITE, hook_mem_access)
-        # mu.hook_add(UC_HOOK_MEM_READ, hook_mem_access)
         mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, hook_mem_fetch_unmapped)
         mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, hook_mem_invalid)
-        # mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x040EC0)
-        mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x040EC0)
-
-        print("encryption emulation done")
+        mu.emu_start(LIBG_ADDRESS + 0x3DFB70 | 1, LIBG_ADDRESS + 0x3A9132)
+        print("first stage done")
         print_regs(mu)
-        mu.emu_stop()
+
+        # now starting the second stage
+        r0 = mu.reg_read(UC_ARM_REG_R0)
+        r1 = mu.reg_read(UC_ARM_REG_R1)
+        arm_mu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+        arm_mu.mem_map(0x350000, 1024 * 1024 * 512)
+        arm_mu.mem_write(0x350000, libg)
+        arm_mu.reg_write(UC_ARM_REG_R0, r0)
+        arm_mu.reg_write(UC_ARM_REG_R1, r1)
+        arm_mu.reg_write(UC_ARM_REG_LR, 0x00)
+        arm_mu.reg_write(UC_ARM_REG_APSR, 0xFFFFFFFF)
+        # patches
+        arm_mu.mem_write(0x350000 + 0x4a3474, bytes.fromhex('00F020E3'))
+        arm_mu.mem_write(0x350000 + 0x4a347c, bytes.fromhex('00F020E3'))
+        arm_mu.emu_start(0x350000 + 0x4A346C, 0x350000 + 0x4A3488)
+        print("second stage done")
+        print_regs(arm_mu)
+
+        # third stage
+        r0 = arm_mu.reg_read(UC_ARM_REG_R0)
+        r1 = arm_mu.reg_read(UC_ARM_REG_R1)
+        r2 = arm_mu.reg_read(UC_ARM_REG_R2)
+        r12 = arm_mu.reg_read(UC_ARM_REG_R12)
+        mu.reg_write(UC_ARM_REG_R0, r0)
+        mu.reg_write(UC_ARM_REG_R1, r1)
+        mu.reg_write(UC_ARM_REG_R2, r2)
+        mu.reg_write(UC_ARM_REG_R12, r12)
+        mu.emu_start(LIBG_ADDRESS + 0x3A9136 | 1, LIBG_ADDRESS + 0x040EC0)
+
     except UcError as e:
         print("ERROR: %s" % e)
 
