@@ -6,11 +6,11 @@ from unicorn import *
 from unicorn.arm_const import *
 from capstone import *
 
-LIBG_ADDRESS = 0xea688000
-R4_ADDR = 0xe6e141dc
-R8_ADDR = 0xa2edf640
+LIBG_ADDRESS = 0xea783000
+R4_ADDR = 0xebd85c5c
+R8_ADDR = 0xa2ed1bc0
 R12_ADDR = 0xee631944
-SP_ADDR = 0xda979330
+SP_ADDR = 0xda1f9330
 
 libg = open('libg.so', 'rb').read()
 dc_libg = open('base.bin', 'rb').read()
@@ -20,7 +20,6 @@ extra_high_img_t = open('extra_high_2.bin', 'rb').read()
 extra_low_image = open('extra_low_1.bin', 'rb').read()
 
 md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
-arm_md = Cs(CS_ARCH_ARM, CS_ARCH_ARM)
 
 enc_memcpy = [0x3EC7F6, 0x3ec8f8, 0x3EC9FA, 0x3ECAFC, 0x3ecc4c, 0x3eabe2, 0x3ec298, 0x3EC39A,
               0x3EC49C, 0x3EC59E, 0x3e0c0a, 0x2F5C1E, 0x3E0C4C, 0x3E0D3E, 0x3E0D5A, 0x3E8D22,
@@ -29,11 +28,12 @@ enc_memclr = [0x3EC70C, 0x3ec80e, 0x3EC910, 0x3ECA12, 0x3ecb62, 0x3eaaf8, 0x3ec1
               0x3EC3B2, 0x3EC4B4, 0x2F5B62, 0x3E0C64, 0x3E8BB0, 0x3E8BBA, 0x3E8C3A]
 
 # debug things
-dbg = False
+dbg = True
 tr_dbg = False
 last_jmp = 0x0
-jmp_count = 0
-jmp_dbg = -1
+instr_map = {}
+cur_block_dump = True
+last_block = 0x0
 
 
 def jump(uc, address, size):
@@ -43,7 +43,8 @@ def jump(uc, address, size):
 
 
 def hook_block(uc, address, size, user_data):
-    print(">>> Tracing basic block at 0x%x, block size = 0x%x" % (address, size))
+    # print(">>> Tracing basic block at 0x%x, block size = 0x%x" % (address, size))
+    pass
 
 
 def hook_code(uc, address, size, user_data):
@@ -51,6 +52,39 @@ def hook_code(uc, address, size, user_data):
 
     global dbg
     global tr_dbg
+
+    if ad == 0x3ECD34:
+        uc.reg_write(UC_ARM_REG_R2, 0xB699)
+    elif ad == 0x3E8EB8:
+        uc.reg_write(UC_ARM_REG_R2, 0x8D95)
+    elif ad == 0x3EE056:
+        uc.reg_write(UC_ARM_REG_R1, 0x89E4)
+    elif ad == 0x3EAABE:
+        uc.reg_write(UC_ARM_REG_R1, 0xE6B0)
+    elif ad == 0x3ED208:
+        uc.reg_write(UC_ARM_REG_R2, 0x9A6E)
+    elif ad == 0x3EE000:
+        uc.reg_write(UC_ARM_REG_R2, 0xD6E1)
+    elif ad == 0x3EE0AE:
+        uc.reg_write(UC_ARM_REG_R2, 0xE75D)
+    elif ad == 0x3EAF00:
+        uc.reg_write(UC_ARM_REG_R1, 0x40C5)
+    elif ad == 0x3EAA2A:
+        uc.reg_write(UC_ARM_REG_R2, 0x24C2)
+    elif ad == 0x3EB4AE:
+        uc.reg_write(UC_ARM_REG_R2, 0xD8B4)
+    elif ad == 0x3EDAF6:
+        uc.reg_write(UC_ARM_REG_R2, 0x9FF3)
+    elif ad == 0x3E062A:
+        uc.reg_write(UC_ARM_REG_R2, 0xC25A)
+    elif ad == 0x3EA9C6:
+        uc.reg_write(UC_ARM_REG_R2, 0xEBCA)
+    elif ad == 0x3EA4EE:
+        uc.reg_write(UC_ARM_REG_R2, 0x42A3)
+    elif ad == 0x3EAF5A:
+        uc.reg_write(UC_ARM_REG_R2, 0xF8A8)
+    elif ad == 0x3EA31C:
+        uc.reg_write(UC_ARM_REG_R2, 0xCEFA)
 
     # svc
     if ad == 0x3e162e:
@@ -60,22 +94,27 @@ def hook_code(uc, address, size, user_data):
         global last_jmp
         global jmp_count
 
-        if jmp_dbg >= 0:
+        # enable flow builder
+        if True:
+            global cur_block_dump
+
             jc = ad - last_jmp
-            if last_jmp == 0x0 or (0 < jc < 5):
-                last_jmp = ad
+            if jc < 5 and jc > 0:
+                if cur_block_dump:
+                    for i in md.disasm(bytes(uc.mem_read(address, size)), address):
+                        print("0x%x:\t%s\t%s" % (i.address - LIBG_ADDRESS, i.mnemonic, i.op_str))
             else:
-                if jmp_count < jmp_dbg:
-                    print(">>> JUMP " + str(jmp_count) + " at -> " + str(hex(ad)))
-                    jmp_count += 1
-                    last_jmp = ad
+                if ad in instr_map:
+                    print('\ncall ' + instr_map[ad] + '\n\n')
+                    cur_block_dump = False
                 else:
-                    print(">>> JUMP BREAK at -> " + str(hex(ad)))
-                    uc.emu_stop()
-        if tr_dbg:
-            print(">>> Tracing instruction at 0x%x, instruction size = 0x%x" % (ad, size))
-            for i in md.disasm(bytes(uc.mem_read(address, size)), address):
-                print("0x%x:\t%s\t%s" % (i.address - LIBG_ADDRESS, i.mnemonic, i.op_str))
+                    # new block
+                    cur_block_dump = True
+                    print('\nnew block: ' + str(len(instr_map)) + '\n')
+                    instr_map[ad] = "block " + str(len(instr_map))
+                    for i in md.disasm(bytes(uc.mem_read(address, size)), address):
+                        print("0x%x:\t%s\t%s" % (i.address - LIBG_ADDRESS, i.mnemonic, i.op_str))
+            last_jmp = ad
 
     # malloc replace
     if ad == 0x485E0A:
@@ -134,13 +173,11 @@ def print_send(uc):
 
 
 def hook_mem_access(uc, access, address, size, value, user_data):
-    global tr_dbg
-
-    if tr_dbg:
+    if cur_block_dump:
         if access == UC_MEM_WRITE:
             print(">>> Memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" \
                   % (address, size, value))
-        else:  # READ
+        else:
             print(">>> Memory is being READ at 0x%x, data size = %u, data value = 0x%x" \
                   % (address, size, value))
 
@@ -272,20 +309,30 @@ def start():
 
         # registers
         mu.reg_write(UC_ARM_REG_R0, 0x18ed60)
-        mu.reg_write(UC_ARM_REG_R1, 0x16e)
+        # mu.reg_write(UC_ARM_REG_R1, 0x16e)
+        mu.reg_write(UC_ARM_REG_R1, 0x152)
         mu.reg_write(UC_ARM_REG_R2, R8_ADDR + 0x20)
-        mu.reg_write(UC_ARM_REG_R3, 0x17e)
+        # mu.reg_write(UC_ARM_REG_R3, 0x17e)
+        mu.reg_write(UC_ARM_REG_R3, 0x162)
         mu.reg_write(UC_ARM_REG_R4, R4_ADDR)
         mu.reg_write(UC_ARM_REG_R5, SP_ADDR + 0x4e48)
         mu.reg_write(UC_ARM_REG_R6, SP_ADDR + 0x4fb8)
         mu.reg_write(UC_ARM_REG_R7, SP_ADDR + 0x4E30)
         mu.reg_write(UC_ARM_REG_R8, R8_ADDR)
-        mu.reg_write(UC_ARM_REG_R9, 0x17e)
+        # mu.reg_write(UC_ARM_REG_R9, 0x17e)
+        mu.reg_write(UC_ARM_REG_R9, 0x162)
         mu.reg_write(UC_ARM_REG_R10, R4_ADDR + 0x20)
-        mu.reg_write(UC_ARM_REG_R11, 0x19e)
+        # mu.reg_write(UC_ARM_REG_R11, 0x19e)
+        mu.reg_write(UC_ARM_REG_R11, 0x182)
         mu.reg_write(UC_ARM_REG_R12, R12_ADDR)
         mu.reg_write(UC_ARM_REG_SP, SP_ADDR)
         mu.reg_write(UC_ARM_REG_PC, LIBG_ADDRESS + 0x3DFB7E)
+
+        # todo: remove this
+        mu.mem_write(SP_ADDR + 0x5E5C,
+                     bytes.fromhex('99B61876F3FF18CAECA0AEC1F326D9981BBCAF64E7DAA317A7F10966867AF968'))
+        mu.mem_write(SP_ADDR + 0x4e48, bytes.fromhex(
+            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000d007a90c1000000286563686d3373786b6e6d70703966736e6639777737386d6d7a736e62377065747a636570366534620300be0c0000002837346563643030353765393461656530663662343835343733656633613034376234363633653339000000000000001033386532373836363539313230373237ffffffff000000094c656e6f766f2050320000002466303662666436662d393333362d343666652d383839302d33303763353034386562323900000005372e312e320100000000000000103338653237383636353931323037323700000005656e2d474201040000002434653637393636362d656263612d343330322d623338302d63386131386266386634623901000000001d000000000000000000000000000000000000'))
 
         # add hooks
         mu.hook_add(UC_HOOK_CODE, hook_code)
@@ -293,12 +340,12 @@ def start():
         mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, hook_mem_invalid)
         mu.hook_add(UC_HOOK_MEM_WRITE | UC_HOOK_MEM_READ, hook_mem_access)
 
-        hexdump(mu.mem_read(mu.reg_read(UC_ARM_REG_SP), 0x200))
         # start emulation
         mu.emu_start(LIBG_ADDRESS + 0x3dfb86 | 1, LIBG_ADDRESS + 0x3B4F26)
 
         print_regs(mu)
         hexdump(mu.mem_read(mu.reg_read(UC_ARM_REG_R8), 400))
+
     except UcError as e:
         print("ERROR: %s" % e)
 
