@@ -42,49 +42,11 @@ def jump(uc, address, size):
     uc.reg_write(UC_ARM_REG_PC, j)
 
 
-def hook_block(uc, address, size, user_data):
-    # print(">>> Tracing basic block at 0x%x, block size = 0x%x" % (address, size))
-    pass
-
-
 def hook_code(uc, address, size, user_data):
     ad = address - LIBG_ADDRESS
 
     global dbg
     global tr_dbg
-
-    if ad == 0x3ECD34:
-        uc.reg_write(UC_ARM_REG_R2, 0xB699)
-    elif ad == 0x3E8EB8:
-        uc.reg_write(UC_ARM_REG_R2, 0x8D95)
-    elif ad == 0x3EE056:
-        uc.reg_write(UC_ARM_REG_R1, 0x89E4)
-    elif ad == 0x3EAABE:
-        uc.reg_write(UC_ARM_REG_R1, 0xE6B0)
-    elif ad == 0x3ED208:
-        uc.reg_write(UC_ARM_REG_R2, 0x9A6E)
-    elif ad == 0x3EE000:
-        uc.reg_write(UC_ARM_REG_R2, 0xD6E1)
-    elif ad == 0x3EE0AE:
-        uc.reg_write(UC_ARM_REG_R2, 0xE75D)
-    elif ad == 0x3EAF00:
-        uc.reg_write(UC_ARM_REG_R1, 0x40C5)
-    elif ad == 0x3EAA2A:
-        uc.reg_write(UC_ARM_REG_R2, 0x24C2)
-    elif ad == 0x3EB4AE:
-        uc.reg_write(UC_ARM_REG_R2, 0xD8B4)
-    elif ad == 0x3EDAF6:
-        uc.reg_write(UC_ARM_REG_R2, 0x9FF3)
-    elif ad == 0x3E062A:
-        uc.reg_write(UC_ARM_REG_R2, 0xC25A)
-    elif ad == 0x3EA9C6:
-        uc.reg_write(UC_ARM_REG_R2, 0xEBCA)
-    elif ad == 0x3EA4EE:
-        uc.reg_write(UC_ARM_REG_R2, 0x42A3)
-    elif ad == 0x3EAF5A:
-        uc.reg_write(UC_ARM_REG_R2, 0xF8A8)
-    elif ad == 0x3EA31C:
-        uc.reg_write(UC_ARM_REG_R2, 0xCEFA)
 
     # svc
     if ad == 0x3e162e:
@@ -180,33 +142,6 @@ def hook_mem_access(uc, access, address, size, value, user_data):
         else:
             print(">>> Memory is being READ at 0x%x, data size = %u, data value = 0x%x" \
                   % (address, size, value))
-
-
-def hook_mem_invalid(uc, access, address, size, value, user_data):
-    print("[ HOOK_MEM_INVALID - Address: %s ]" % hex(address))
-    if access == UC_MEM_WRITE_UNMAPPED:
-        print(
-            ">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
-        print_regs(uc)
-        return True
-    else:
-        print(
-            ">>> Missing memory is being READ at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
-        print_regs(uc)
-        return True
-
-
-def hook_mem_fetch_unmapped(uc, access, address, size, value, user_data):
-    print(hex(uc.reg_read(UC_ARM_REG_PC)))
-    print("[ HOOK_MEM_FETCH - Address: %s ]" % hex(address))
-    print("[ mem_fetch_unmapped: faulting address at %s ]" % hex(address).strip("L"))
-    return True
-
-
-def hook_err(uc, address, data):
-    print("[ HOOK_ERROR - Address: %s ]" % hex(address))
-    print("[ HOOK_ERROR: faulting address at %s ]" % hex(address).strip("L"))
-    return True
 
 
 def memcpy_replace(uc):
@@ -328,16 +263,8 @@ def start():
         mu.reg_write(UC_ARM_REG_SP, SP_ADDR)
         mu.reg_write(UC_ARM_REG_PC, LIBG_ADDRESS + 0x3DFB7E)
 
-        # todo: remove this
-        mu.mem_write(SP_ADDR + 0x5E5C,
-                     bytes.fromhex('99B61876F3FF18CAECA0AEC1F326D9981BBCAF64E7DAA317A7F10966867AF968'))
-        mu.mem_write(SP_ADDR + 0x4e48, bytes.fromhex(
-            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000d007a90c1000000286563686d3373786b6e6d70703966736e6639777737386d6d7a736e62377065747a636570366534620300be0c0000002837346563643030353765393461656530663662343835343733656633613034376234363633653339000000000000001033386532373836363539313230373237ffffffff000000094c656e6f766f2050320000002466303662666436662d393333362d343666652d383839302d33303763353034386562323900000005372e312e320100000000000000103338653237383636353931323037323700000005656e2d474201040000002434653637393636362d656263612d343330322d623338302d63386131386266386634623901000000001d000000000000000000000000000000000000'))
-
         # add hooks
         mu.hook_add(UC_HOOK_CODE, hook_code)
-        mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, hook_mem_fetch_unmapped)
-        mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, hook_mem_invalid)
         mu.hook_add(UC_HOOK_MEM_WRITE | UC_HOOK_MEM_READ, hook_mem_access)
 
         # start emulation

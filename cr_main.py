@@ -159,33 +159,6 @@ def hook_mem_access(uc, access, address, size, value, user_data):
                   % (address, size, value))
 
 
-def hook_mem_invalid(uc, access, address, size, value, user_data):
-    print("[ HOOK_MEM_INVALID - Address: %s ]" % hex(address))
-    if access == UC_MEM_WRITE_UNMAPPED:
-        print(
-            ">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
-        print_regs(uc)
-        return True
-    else:
-        print(
-            ">>> Missing memory is being READ at 0x%x, data size = %u, data value = 0x%x" % (address, size, value))
-        print_regs(uc)
-        return True
-
-
-def hook_mem_fetch_unmapped(uc, access, address, size, value, user_data):
-    print(hex(uc.reg_read(UC_ARM_REG_PC)))
-    print("[ HOOK_MEM_FETCH - Address: %s ]" % hex(address))
-    print("[ mem_fetch_unmapped: faulting address at %s ]" % hex(address).strip("L"))
-    return True
-
-
-def hook_err(uc, address, data):
-    print("[ HOOK_ERROR - Address: %s ]" % hex(address))
-    print("[ HOOK_ERROR: faulting address at %s ]" % hex(address).strip("L"))
-    return True
-
-
 def memcpy_replace(uc):
     b = uc.mem_read(uc.reg_read(UC_ARM_REG_R1), uc.reg_read(UC_ARM_REG_R2))
     uc.mem_write(uc.reg_read(UC_ARM_REG_R0), bytes(b))
@@ -299,8 +272,6 @@ def start():
 
         # add hooks
         mu.hook_add(UC_HOOK_CODE, hook_code)
-        mu.hook_add(UC_HOOK_MEM_FETCH_UNMAPPED, hook_mem_fetch_unmapped)
-        mu.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED, hook_mem_invalid)
         mu.hook_add(UC_HOOK_MEM_WRITE | UC_HOOK_MEM_READ, hook_mem_access)
 
         # start emulation
