@@ -291,16 +291,12 @@ function inject() {
                 var pt4 = ptr(parseInt(base) + parseInt(0x040D34));
 
                 var pt6 = ptr(parseInt(base) + 1 + parseInt(0x1ADDA4))
+                var pr_frck = ptr(parseInt(base) + 1 + parseInt(0x060270))
 
                 // kill new coc frida detection
-                var fucked = false
-                Interceptor.attach(Module.findExportByName("libg.so", "socket"), {
+                Interceptor.attach(pr_frck, {
                     onEnter: function (args) {
-                        if (args[0] == 2 && !fucked) {
-                            fucked = true;
-                            console.log("WOOP");
-                            this.context.r0 = 0x20;
-                        }
+                        this.context.r0 = 0xFF
                     }
                 });
 
